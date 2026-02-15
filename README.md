@@ -2,7 +2,8 @@
 
 A professional, local analytics suite for [PokerNow](https://pokernow.club/) logs. Analyze your home games with precision, tracking advanced statistics like VPIP, PFR, 3-Bet, 4-Bet, and post-flop tendencies across different positions.
 
-<img width="1980" height="1400" alt="image" src="https://github.com/user-attachments/assets/c2ed7fa1-54b7-436a-9768-286106163e07" />
+<img width="2672" height="1346" alt="image" src="https://github.com/user-attachments/assets/db159170-70aa-4954-a182-38892b8667a4" />
+
 
 
 ## Features
