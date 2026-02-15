@@ -160,6 +160,11 @@ class PokerNowParser:
                         amount = float(amt_match.group(1))
                 elif "Uncalled bet" in entry:
                     action_type = ActionType.UNCALLED
+                elif "does not show" in entry or "mucks" in entry:
+                    action_type = ActionType.SHOW
+                    # Treat mucks as "Went to Showdown" (SHOW) but lost
+                    # We use SHOW action to detect WTSD.
+                    # Muck means they were at showdown.
                 
                 if action_type:
                     action = Action(

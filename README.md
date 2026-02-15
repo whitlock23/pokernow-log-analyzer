@@ -8,11 +8,13 @@ A professional, local analytics suite for [PokerNow](https://pokernow.club/) log
 
 ## Features
 
-*   **Comprehensive Dashboard**: View key stats (VPIP, PFR, 3-Bet, C-Bet, AF, WTSD, etc.) for all players.
+*   **Comprehensive Dashboard**: View key stats (VPIP, PFR, 3-Bet, C-Bet, AF, WTSD, W$SD, WWSF, WWSR, etc.) for all players.
+*   **Detailed Tooltips**: Hover over any stat to see the exact sample size (e.g., "3/10 hands").
 *   **Positional Analysis**: Deep dive into player tendencies by position (UTG, CO, BTN, SB, BB).
-*   **Advanced Metrics**: Track 4-Bet, 5-Bet, Fold to 3-Bet/4-Bet, and Showdown winnings.
-*   **Player Mapping**: Merge multiple aliases/IDs into a single player profile.
-*   **Multi-File Upload**: Drag and drop multiple CSV logs to build a cumulative database.
+*   **Advanced Metrics**: Track 4-Bet, 5-Bet, Fold to 3-Bet/4-Bet, Post-flop Aggression, and Win Rates by Street.
+*   **Player Mapping**: Auto-scan similar names and merge multiple aliases/IDs into a single player profile.
+*   **Data Export**: Download your analyzed stats as CSV for external processing.
+*   **Multi-File Upload**: Drag and drop multiple CSV logs to build a cumulative database (auto-deduplicates hands).
 *   **Dark Mode**: Modern, eye-friendly dark interface.
 *   **Privacy Focused**: Runs 100% locally. Your data never leaves your machine.
 

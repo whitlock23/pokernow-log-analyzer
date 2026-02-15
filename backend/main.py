@@ -146,6 +146,43 @@ def get_players():
         })
     return players
 
+@app.get("/download-stats")
+def download_stats():
+    summary = analyzer.get_summary()
+    
+    # Flatten the data for CSV
+    # Columns: Name, Hands, VPIP, PFR, 3-Bet, F3B, 4-Bet, F4B, C-Bet, FCB, AF, WTSD, W$SD, WWSF, WWSR
+    # And maybe positional breakdowns? Just global for now to keep it simple or detailed?
+    # Let's do Global Stats first.
+    
+    csv_rows = []
+    # Header
+    headers = [
+        "Player Name", "Player ID", "Hands", 
+        "VPIP %", "PFR %", "3-Bet %", "Fold to 3-Bet %",
+        "4-Bet %", "Fold to 4-Bet %", "C-Bet %", "Fold to C-Bet %",
+        "AF", "WTSD %", "W$SD %", "WWSF %", "WWSR %"
+    ]
+    csv_rows.append(",".join(headers))
+    
+    for p in summary:
+        row = [
+            f'"{p["name"]}"', f'"{p["id"]}"', str(p["hands"]),
+            str(p["vpip"]), str(p["pfr"]), str(p["three_bet"]), str(p["fold_to_3bet"]),
+            str(p["four_bet"]), str(p["fold_to_4bet"]), str(p["c_bet"]), str(p["fold_to_cbet"]),
+            str(p["af"]), str(p["wtsd"]), str(p["wtsd_won"]), str(p["wwsf"]), str(p["wwsr"])
+        ]
+        csv_rows.append(",".join(row))
+        
+    csv_content = "\n".join(csv_rows)
+    
+    from fastapi.responses import Response
+    return Response(
+        content=csv_content,
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=poker_stats.csv"}
+    )
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)

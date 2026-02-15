@@ -328,7 +328,93 @@ class Analyzer:
                         if act.action_type == ActionType.FOLD:
                             folded_to_cbet_players.add(act.player_id)
 
+        # --- WWSF / WWSR / WWST ---
+        # WWSF: Won When Saw Flop
+        # Denom: Players who saw flop (not folded preflop)
+        # Num: Won hand (and saw flop)
+        
+        # Check if flop occurred
+        if len(actions_by_street[Street.FLOP]) > 0 or len(actions_by_street[Street.TURN]) > 0 or len(actions_by_street[Street.RIVER]) > 0 or len(hand.community_cards) >= 3:
+             saw_flop_players = set()
+             for pid in players_in_hand:
+                 # Check if they folded preflop
+                 folded_pre = False
+                 for action in pf_actions:
+                     if action.player_id == pid and action.action_type == ActionType.FOLD:
+                         folded_pre = True
+                         break
+                 if not folded_pre:
+                     saw_flop_players.add(pid)
+            
+             for pid in saw_flop_players:
+                 update_stat(pid, 'seen_flop_count')
+                 if pid in winners:
+                     update_stat(pid, 'won_when_seen_flop_count')
+
+        # Check Turn
+        if len(actions_by_street[Street.TURN]) > 0 or len(actions_by_street[Street.RIVER]) > 0 or len(hand.community_cards) >= 4:
+            saw_turn_players = set()
+            # Must have seen flop AND not folded on flop
+            for pid in players_in_hand:
+                folded_pre_or_flop = False
+                # Check preflop fold
+                for action in pf_actions:
+                    if action.player_id == pid and action.action_type == ActionType.FOLD:
+                        folded_pre_or_flop = True
+                        break
+                if folded_pre_or_flop: continue
+                
+                # Check flop fold
+                for action in actions_by_street[Street.FLOP]:
+                    if action.player_id == pid and action.action_type == ActionType.FOLD:
+                        folded_pre_or_flop = True
+                        break
+                
+                if not folded_pre_or_flop:
+                    saw_turn_players.add(pid)
+            
+            for pid in saw_turn_players:
+                update_stat(pid, 'seen_turn_count')
+                if pid in winners:
+                    update_stat(pid, 'won_when_seen_turn_count')
+
+        # Check River
+        if len(actions_by_street[Street.RIVER]) > 0 or len(hand.community_cards) >= 5:
+            saw_river_players = set()
+            for pid in players_in_hand:
+                folded_early = False
+                # Check folds on Pre, Flop, Turn
+                for street in [Street.PREFLOP, Street.FLOP, Street.TURN]:
+                    for action in actions_by_street[street]:
+                         if action.player_id == pid and action.action_type == ActionType.FOLD:
+                             folded_early = True
+                             break
+                    if folded_early: break
+                
+                if not folded_early:
+                    saw_river_players.add(pid)
+            
+            for pid in saw_river_players:
+                update_stat(pid, 'seen_river_count')
+                if pid in winners:
+                    update_stat(pid, 'won_when_seen_river_count')
+
         # --- Showdown ---
+        # Re-calculate WTSD logic based on Definition:
+        # WTSD = (Hands went to showdown / Hands saw flop)
+        # Note: Some definitions say "Hands went to showdown / Hands played" but "Hands saw flop" is more accurate for post-flop tendency.
+        # However, standard HUDs (HM2/PT4) usually use: WTSD% = (Times went to SD / Times saw flop)
+        # BUT your current code uses: WTSD = (Times went to SD / Total Hands Played) which is WRONG if looking for standard definition.
+        # Let's align with standard: WTSD = (Times went to SD / Times saw flop)
+        # If user folds preflop, it shouldn't count against their WTSD.
+        
+        # Update: User requested "WTSD: Player saw flop and went to showdown %"
+        # My previous code: "wtsd": pct(s.wtsd_count, s.hands_played) -> This is definitely wrong (denominator is too big).
+        # Correct denominator should be s.seen_flop_count.
+        
+        # Logic for WTSD numerator (wtsd_count) is already correct (players at showdown).
+        # Logic for WTSD denominator: I will use seen_flop_count in get_summary.
+        
         showdown_occurred = any(a.action_type == ActionType.SHOW for a in hand.actions)
         players_at_showdown = set()
         if showdown_occurred:
@@ -419,6 +505,13 @@ class Analyzer:
                 target.wtsd_count += source.wtsd_count
                 target.won_at_showdown_count += source.won_at_showdown_count
                 target.won_hand_count += source.won_hand_count
+
+                target.seen_flop_count += source.seen_flop_count
+                target.won_when_seen_flop_count += source.won_when_seen_flop_count
+                target.seen_turn_count += source.seen_turn_count
+                target.won_when_seen_turn_count += source.won_when_seen_turn_count
+                target.seen_river_count += source.seen_river_count
+                target.won_when_seen_river_count += source.won_when_seen_river_count
             
             # Merge Global
             merge_base(agg, stat)
@@ -448,9 +541,21 @@ class Analyzer:
                 "c_bet": pct(s.c_bet_count, s.c_bet_opp),
                 "fold_to_cbet": pct(s.fold_to_cbet_count, s.faced_cbet_count),
                 "af": round((s.aggression_actions / s.call_actions), 2) if s.call_actions > 0 else s.aggression_actions,
-                "wtsd": pct(s.wtsd_count, s.hands_played),
+                
+                # WTSD: Went to Showdown / Seen Flop
+                "wtsd": pct(s.wtsd_count, s.seen_flop_count),
+                # WTSD Turn: Went to Showdown / Seen Turn
+                "wtsd_turn": pct(s.wtsd_count, s.seen_turn_count),
+                # WTSD River: Went to Showdown / Seen River
+                "wtsd_river": pct(s.wtsd_count, s.seen_river_count),
+                
+                # W$SD: Won Money at Showdown / Went to Showdown
                 "wtsd_won": pct(s.won_at_showdown_count, s.wtsd_count),
                 
+                "wwsf": pct(s.won_when_seen_flop_count, s.seen_flop_count),
+                "wwst": pct(s.won_when_seen_turn_count, s.seen_turn_count),
+                "wwsr": pct(s.won_when_seen_river_count, s.seen_river_count),
+
                 # Raw counts for frontend tooltips
                 "vpip_count": s.vpip_count,
                 "pfr_count": s.pfr_count,
@@ -461,7 +566,11 @@ class Analyzer:
                 "c_bet_count": s.c_bet_count, "c_bet_opp": s.c_bet_opp,
                 "fold_to_cbet_count": s.fold_to_cbet_count, "faced_cbet_count": s.faced_cbet_count,
                 "aggression_actions": s.aggression_actions, "call_actions": s.call_actions,
-                "wtsd_count": s.wtsd_count, "won_at_showdown_count": s.won_at_showdown_count
+                "wtsd_count": s.wtsd_count, "won_at_showdown_count": s.won_at_showdown_count,
+                
+                "seen_flop_count": s.seen_flop_count, "won_when_seen_flop_count": s.won_when_seen_flop_count,
+                "seen_turn_count": s.seen_turn_count, "won_when_seen_turn_count": s.won_when_seen_turn_count,
+                "seen_river_count": s.seen_river_count, "won_when_seen_river_count": s.won_when_seen_river_count
             }
 
         for name, stat in aggregated_stats.items():

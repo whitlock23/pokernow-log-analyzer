@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
-import { ChevronDown, ChevronUp, Info, Search } from 'lucide-react';
+import { ChevronDown, ChevronUp, Info, Search, Download } from 'lucide-react';
 import PlayerDetailModal from './PlayerDetailModal';
 
 interface PlayerStat {
@@ -23,6 +23,15 @@ interface PlayerStat {
   five_bet: number;
   fold_to_5bet: number;
 
+  // WWSF / WWSR / WWST
+  wwsf: number;
+  wwsr: number;
+  wwst: number;
+
+  // WTSD by Street (added)
+  wtsd_turn: number;
+  wtsd_river: number;
+
   // Raw counts
   vpip_count: number;
   pfr_count: number;
@@ -33,6 +42,10 @@ interface PlayerStat {
   wtsd_count: number;
   won_at_showdown_count: number;
   aggression_actions: number; call_actions: number;
+
+  seen_flop_count: number; won_when_seen_flop_count: number;
+  seen_turn_count: number; won_when_seen_turn_count: number;
+  seen_river_count: number; won_when_seen_river_count: number;
 }
 
 interface StatsTableProps {
@@ -122,6 +135,10 @@ const StatsTable: React.FC<StatsTableProps> = ({ refreshTrigger }) => {
       </div>
   );
 
+  const handleDownload = () => {
+      window.location.href = 'http://localhost:8000/download-stats';
+  };
+
   return (
     <>
       <div className="bg-white dark:bg-gray-900 rounded-xl shadow-lg border border-gray-100 dark:border-gray-800 overflow-hidden transition-colors duration-300">
@@ -130,8 +147,17 @@ const StatsTable: React.FC<StatsTableProps> = ({ refreshTrigger }) => {
             <h2 className="text-xl font-bold text-gray-800 dark:text-white">Player Statistics</h2>
             <p className="text-sm text-gray-500 dark:text-gray-400">Click on a player to view detailed positional analysis</p>
           </div>
-          <div className="text-sm text-gray-500 dark:text-gray-400">
-            Total Players: {stats.length}
+          <div className="flex items-center gap-4">
+              <div className="text-sm text-gray-500 dark:text-gray-400">
+                Total Players: {stats.length}
+              </div>
+              <button 
+                onClick={handleDownload}
+                className="flex items-center px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg transition-colors shadow-sm"
+              >
+                  <Download size={16} className="mr-2" />
+                  Export CSV
+              </button>
           </div>
         </div>
         
@@ -154,8 +180,11 @@ const StatsTable: React.FC<StatsTableProps> = ({ refreshTrigger }) => {
                 <TH field="af" label="AF" tooltip="Aggression Factor (Post-flop)" />
                 
                 {/* Showdown */}
-                <TH field="wtsd" label="WTSD" tooltip="Went to Showdown %" />
+                <TH field="wtsd" label="WTSD" tooltip="Went to Showdown % (when saw Flop)" />
                 <TH field="wtsd_won" label="W$SD" tooltip="Won Money at Showdown %" />
+                
+                <TH field="wwsf" label="WWSF" tooltip="Won When Saw Flop %" />
+                <TH field="wwsr" label="WWSR" tooltip="Won When Saw River %" />
               </tr>
             </thead>
             <tbody className="bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-800">
@@ -208,10 +237,20 @@ const StatsTable: React.FC<StatsTableProps> = ({ refreshTrigger }) => {
                   </td>
                   
                   <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300 font-mono">
-                    <StatCell value={stat.wtsd} subtext={`${stat.wtsd_count}/${stat.hands}`} />
+                    <div className="flex flex-col gap-0.5">
+                        <StatCell value={stat.wtsd} subtext={`Flop: ${stat.wtsd_count}/${stat.seen_flop_count}`} />
+                        <span className="text-[10px] text-gray-400">T: {stat.wtsd_turn}% | R: {stat.wtsd_river}%</span>
+                    </div>
                   </td>
                   <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300 font-mono">
                     <StatCell value={stat.wtsd_won} subtext={`${stat.won_at_showdown_count}/${stat.wtsd_count}`} />
+                  </td>
+                  
+                  <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300 font-mono">
+                    <StatCell value={stat.wwsf} subtext={`${stat.won_when_seen_flop_count}/${stat.seen_flop_count}`} />
+                  </td>
+                  <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300 font-mono">
+                    <StatCell value={stat.wwsr} subtext={`${stat.won_when_seen_river_count}/${stat.seen_river_count}`} />
                   </td>
                 </tr>
               ))}

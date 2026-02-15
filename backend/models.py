@@ -80,7 +80,17 @@ class BaseStats(BaseModel):
     # Showdown
     wtsd_count: int = 0  # Went to Showdown
     won_at_showdown_count: int = 0 # Won money at showdown
+
+    # WWSF / WWSR / WWST
+    seen_flop_count: int = 0
+    won_when_seen_flop_count: int = 0
     
+    seen_river_count: int = 0
+    won_when_seen_river_count: int = 0
+    
+    seen_turn_count: int = 0
+    won_when_seen_turn_count: int = 0
+
     # General
     won_hand_count: int = 0
     total_winnings: float = 0.0
