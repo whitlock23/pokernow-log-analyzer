@@ -30,6 +30,7 @@ class PokerNowParser:
             # Start of Hand
             if "-- starting hand" in entry:
                 if current_hand:
+                    self._detect_bomb_pot(current_hand)
                     hands.append(current_hand)
                 
                 hand_id_match = re.search(r'hand #(\d+)', entry)
@@ -135,6 +136,20 @@ class PokerNowParser:
                     if amt_match:
                         amount = float(amt_match.group(1))
                         current_hand.big_blind = amount
+                elif "posts a straddle" in entry:
+                    action_type = ActionType.POST_STRADDLE
+                    amt_match = re.search(r'of (\d+(\.\d+)?)', entry)
+                    if amt_match:
+                        amount = float(amt_match.group(1))
+                elif "posts" in entry:
+                    action_type = ActionType.POST
+                    # Try "posts X" or "posts ... of X"
+                    amt_match = re.search(r'posts (\d+(\.\d+)?)', entry)
+                    if not amt_match:
+                         amt_match = re.search(r'of (\d+(\.\d+)?)', entry)
+                    
+                    if amt_match:
+                        amount = float(amt_match.group(1))
                 elif "shows" in entry:
                     action_type = ActionType.SHOW
                     # Could parse cards here
@@ -158,8 +173,21 @@ class PokerNowParser:
                     )
                     current_hand.actions.append(action)
         
-        # Add the last hand
         if current_hand:
+            self._detect_bomb_pot(current_hand)
             hands.append(current_hand)
             
         return hands
+
+    def _detect_bomb_pot(self, hand: Hand):
+        # Bomb pot logic: Everyone seated posted something pre-flop.
+        posters = set()
+        posting_actions = [ActionType.POST_SB, ActionType.POST_BB, ActionType.POST_STRADDLE, ActionType.POST]
+        
+        for action in hand.actions:
+            if action.street == Street.PREFLOP and action.action_type in posting_actions:
+                posters.add(action.player_id)
+        
+        # If all seated players posted, it's likely a bomb pot
+        if len(hand.seated_players) > 0 and len(posters) == len(hand.seated_players):
+             hand.is_bomb_pot = True

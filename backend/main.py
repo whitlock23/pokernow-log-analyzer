@@ -67,6 +67,9 @@ def reset_data():
     global parser, analyzer
     parser = PokerNowParser()
     analyzer = Analyzer()
+    if os.path.exists(UPLOAD_DIR):
+        shutil.rmtree(UPLOAD_DIR)
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
     return {"message": "Reset successful"}
 
 @app.post("/mapping")

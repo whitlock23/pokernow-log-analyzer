@@ -22,6 +22,17 @@ interface PlayerStat {
   fold_to_4bet: number;
   five_bet: number;
   fold_to_5bet: number;
+
+  // Raw counts
+  vpip_count: number;
+  pfr_count: number;
+  three_bet_count: number; three_bet_opp: number;
+  fold_to_3bet_count: number; faced_3bet_count: number;
+  c_bet_count: number; c_bet_opp: number;
+  fold_to_cbet_count: number; faced_cbet_count: number;
+  wtsd_count: number;
+  won_at_showdown_count: number;
+  aggression_actions: number; call_actions: number;
 }
 
 interface StatsTableProps {
@@ -99,6 +110,18 @@ const StatsTable: React.FC<StatsTableProps> = ({ refreshTrigger }) => {
     </th>
   );
 
+  const StatCell = ({ value, label, subtext, colorClass }: { value: any, label?: string, subtext?: string, colorClass?: string }) => (
+      <div className="group relative cursor-help">
+          <span className={colorClass}>{value}%</span>
+          {subtext && (
+              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block px-2 py-1 bg-gray-900 text-white text-xs rounded shadow-lg whitespace-nowrap z-50">
+                  {subtext}
+                  <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-900"></div>
+              </div>
+          )}
+      </div>
+  );
+
   return (
     <>
       <div className="bg-white dark:bg-gray-900 rounded-xl shadow-lg border border-gray-100 dark:border-gray-800 overflow-hidden transition-colors duration-300">
@@ -155,17 +178,41 @@ const StatsTable: React.FC<StatsTableProps> = ({ refreshTrigger }) => {
                   </td>
                   <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400 font-mono">{stat.hands}</td>
                   
-                  <td className={`px-4 py-4 whitespace-nowrap text-sm font-mono ${getVpipColor(stat.vpip)}`}>{stat.vpip}%</td>
-                  <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300 font-mono">{stat.pfr}%</td>
-                  <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300 font-mono">{stat.three_bet}%</td>
-                  <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400 font-mono">{stat.fold_to_3bet}%</td>
+                  <td className={`px-4 py-4 whitespace-nowrap text-sm font-mono`}>
+                    <StatCell value={stat.vpip} colorClass={getVpipColor(stat.vpip)} subtext={`${stat.vpip_count}/${stat.hands}`} />
+                  </td>
+                  <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300 font-mono">
+                    <StatCell value={stat.pfr} subtext={`${stat.pfr_count}/${stat.hands}`} />
+                  </td>
+                  <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300 font-mono">
+                    <StatCell value={stat.three_bet} subtext={`${stat.three_bet_count}/${stat.three_bet_opp}`} />
+                  </td>
+                  <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400 font-mono">
+                    <StatCell value={stat.fold_to_3bet} subtext={`${stat.fold_to_3bet_count}/${stat.faced_3bet_count}`} />
+                  </td>
                   
-                  <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300 font-mono">{stat.c_bet}%</td>
-                  <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400 font-mono">{stat.fold_to_cbet}%</td>
-                  <td className={`px-4 py-4 whitespace-nowrap text-sm font-mono ${getAfColor(stat.af)}`}>{stat.af}</td>
+                  <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300 font-mono">
+                    <StatCell value={stat.c_bet} subtext={`${stat.c_bet_count}/${stat.c_bet_opp}`} />
+                  </td>
+                  <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400 font-mono">
+                    <StatCell value={stat.fold_to_cbet} subtext={`${stat.fold_to_cbet_count}/${stat.faced_cbet_count}`} />
+                  </td>
+                  <td className={`px-4 py-4 whitespace-nowrap text-sm font-mono ${getAfColor(stat.af)}`}>
+                      <div className="group relative cursor-help">
+                          {stat.af}
+                          <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block px-2 py-1 bg-gray-900 text-white text-xs rounded shadow-lg whitespace-nowrap z-50">
+                              {stat.aggression_actions} / {stat.call_actions}
+                              <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-900"></div>
+                          </div>
+                      </div>
+                  </td>
                   
-                  <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300 font-mono">{stat.wtsd}%</td>
-                  <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300 font-mono">{stat.wtsd_won}%</td>
+                  <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300 font-mono">
+                    <StatCell value={stat.wtsd} subtext={`${stat.wtsd_count}/${stat.hands}`} />
+                  </td>
+                  <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300 font-mono">
+                    <StatCell value={stat.wtsd_won} subtext={`${stat.won_at_showdown_count}/${stat.wtsd_count}`} />
+                  </td>
                 </tr>
               ))}
               {stats.length === 0 && (

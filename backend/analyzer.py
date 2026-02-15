@@ -5,7 +5,8 @@ class Analyzer:
     def __init__(self):
         self.stats: Dict[str, PlayerStat] = {} # player_id -> Stat
         self.player_aliases: Dict[str, str] = {} # player_id -> display_name
-        
+        self.processed_hand_ids: Set[str] = set() # Track processed hands to prevent duplicates
+
     def add_alias(self, player_id: str, alias: str):
         self.player_aliases[player_id] = alias
 
@@ -13,7 +14,13 @@ class Analyzer:
         # Clear stats to avoid double counting if re-processing? 
         # For now assume additive or handled by caller resetting.
         for hand in hands:
+            # Use hand_id + timestamp to identify unique hands across different sessions
+            # PokerNow hand IDs reset to 1 for each new session log
+            unique_key = f"{hand.hand_id}_{hand.date}"
+            if unique_key in self.processed_hand_ids:
+                continue
             self._process_single_hand(hand)
+            self.processed_hand_ids.add(unique_key)
 
     def _determine_position(self, hand: Hand, player_id: str) -> str:
         # Based on seated_players and dealer_id
@@ -100,6 +107,9 @@ class Analyzer:
         update_fn(stat)
 
     def _process_single_hand(self, hand: Hand):
+        if hand.is_bomb_pot:
+            return
+
         players_in_hand = set(hand.players.keys())
         
         # Determine winners (actions with WIN)
@@ -198,12 +208,15 @@ class Analyzer:
                     preflop_aggressor = pid
                 elif current_raise_count == 2:
                     did_3bet.add(pid)
+                    did_pfr.add(pid) # 3-bet is also a PFR
                     preflop_aggressor = pid
                 elif current_raise_count == 3:
                     did_4bet.add(pid)
+                    did_pfr.add(pid) # 4-bet is also a PFR
                     preflop_aggressor = pid
                 elif current_raise_count >= 4: # 5-bet+
                     did_5bet.add(pid)
+                    did_pfr.add(pid) # 5-bet is also a PFR
                     preflop_aggressor = pid
             
             # Fold Logic (Check what they faced)
@@ -447,7 +460,8 @@ class Analyzer:
                 "fold_to_4bet_count": s.fold_to_4bet_count, "faced_4bet_count": s.faced_4bet_count,
                 "c_bet_count": s.c_bet_count, "c_bet_opp": s.c_bet_opp,
                 "fold_to_cbet_count": s.fold_to_cbet_count, "faced_cbet_count": s.faced_cbet_count,
-                "aggression_actions": s.aggression_actions, "call_actions": s.call_actions
+                "aggression_actions": s.aggression_actions, "call_actions": s.call_actions,
+                "wtsd_count": s.wtsd_count, "won_at_showdown_count": s.won_at_showdown_count
             }
 
         for name, stat in aggregated_stats.items():

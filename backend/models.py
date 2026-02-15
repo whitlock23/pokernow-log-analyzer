@@ -6,6 +6,7 @@ class ActionType:
     POST_SB = "POST_SB"
     POST_BB = "POST_BB"
     POST_STRADDLE = "POST_STRADDLE"
+    POST = "POST"
     FOLD = "FOLD"
     CHECK = "CHECK"
     CALL = "CALL"
@@ -41,6 +42,7 @@ class Hand(BaseModel):
     dealer_id: Optional[str] = None # ID of dealer (if parsable)
     small_blind: float = 0.0
     big_blind: float = 0.0
+    is_bomb_pot: bool = False
     community_cards: List[str] = []
     winners: List[str] = [] # list of player_ids who won
 
