@@ -231,66 +231,68 @@ class Analyzer:
                     folded_to_5bet.add(pid)
                     
             # Check "Faced" logic (Any action implies facing)
-            # If current_raise_count == 2, anyone acting (Call, Fold, Raise) is facing 3-bet.
-            # Except the person who made it? No, loop processes actions.
-            # When we encounter an action, `current_raise_count` is what's on board *before* this action?
-            # Wait, my loop updates `current_raise_count` inside.
-            # I should check facing state *before* updating count for current raise.
-            pass
-        
-        # Re-run for precise "Faced" and "Opp" logic
-        # Ideally we do this in one pass but state is tricky.
-        
-        curr_raises = 0
-        
-        # Opp tracking
-        # 3-bet opp: Acting when raises=1
-        # 4-bet opp: Acting when raises=2
-        # 5-bet opp: Acting when raises=3
-        
-        # Use sets to avoid double counting per player per hand
-        had_3bet_opp = set()
-        had_4bet_opp = set()
-        had_5bet_opp = set()
-        
-        # Identify who made the raises to exclude them from "facing" their own raise immediately?
-        # Actually if I raise, I am not facing a raise.
-        
-        for action in pf_actions:
-            pid = action.player_id
             
-            # Determine status BEFORE this action
-            # If curr_raises == 1, player is facing PFR (Has 3-bet opp)
-            if curr_raises == 1:
-                # Unless they are the one who just raised?
-                # No, this is the next action.
-                if action.action_type in [ActionType.CALL, ActionType.RAISE, ActionType.FOLD]:
-                     had_3bet_opp.add(pid)
-                     # They are facing a raise (potential 3-bet situation)
-                     # But "Faced 3-Bet" usually means facing a re-raise.
-                     # Facing 1 raise is just facing an open.
-                     pass
+            # --- Pre-calculate Max Raise Count for this street ---
+            # To know what the final state was.
+            
+            # Re-run for precise "Faced" and "Opp" logic
+            
+            # We need to know who made which raise to avoid "facing own raise"
+            
+            # Mapping: raise_level -> player_id
+            raisers = {}
+            # Re-scan to find raisers
+            temp_rc = 0
+            for action in pf_actions:
+                if action.action_type == ActionType.RAISE:
+                    temp_rc += 1
+                    raisers[temp_rc] = action.player_id
+            
+            curr_raises = 0
+            
+            # Use sets to avoid double counting per player per hand
+            had_3bet_opp = set()
+            had_4bet_opp = set()
+            had_5bet_opp = set()
+            
+            # Logic:
+            # If current raise count = 1 (Open Raise happened):
+            #   - Next players are facing PFR.
+            #   - If they Act (Call/Fold/Raise), they had a chance to 3-Bet.
+            #   - EXCEPTION: The Open Raiser himself is not facing PFR.
+            
+            for action in pf_actions:
+                pid = action.player_id
+                
+                # Determine status BEFORE this action
+                
+                if curr_raises == 1:
+                    # Facing Open Raise (Opportunity to 3-Bet)
+                    # Exclude the Open Raiser (PFR)
+                    if pid != raisers.get(1):
+                        had_3bet_opp.add(pid)
 
-            if curr_raises == 2:
-                # Facing a 3-bet
-                if action.action_type in [ActionType.CALL, ActionType.RAISE, ActionType.FOLD]:
-                    had_4bet_opp.add(pid) # Chance to 4-bet
-                    faced_3bet.add(pid)
-            
-            if curr_raises == 3:
-                # Facing a 4-bet
-                if action.action_type in [ActionType.CALL, ActionType.RAISE, ActionType.FOLD]:
-                    had_5bet_opp.add(pid) # Chance to 5-bet
-                    faced_4bet.add(pid)
-            
-            if curr_raises >= 4:
-                # Facing 5-bet+
-                if action.action_type in [ActionType.CALL, ActionType.RAISE, ActionType.FOLD]:
-                    faced_5bet.add(pid)
+                if curr_raises == 2:
+                    # Facing 3-Bet (Opportunity to 4-Bet)
+                    # Exclude the 3-Bettor
+                    if pid != raisers.get(2):
+                        had_4bet_opp.add(pid) 
+                        faced_3bet.add(pid)
+                
+                if curr_raises == 3:
+                    # Facing 4-Bet (Opportunity to 5-Bet)
+                    if pid != raisers.get(3):
+                        had_5bet_opp.add(pid) 
+                        faced_4bet.add(pid)
+                
+                if curr_raises >= 4:
+                    # Facing 5-bet+
+                    if pid != raisers.get(curr_raises):
+                        faced_5bet.add(pid)
 
-            # Update State
-            if action.action_type == ActionType.RAISE:
-                curr_raises += 1
+                # Update State AFTER processing action
+                if action.action_type == ActionType.RAISE:
+                    curr_raises += 1
                 
         # --- Post-flop (C-Bet & AF) ---
         c_bet_opp_player = preflop_aggressor
@@ -544,9 +546,17 @@ class Analyzer:
                 
                 # WTSD: Went to Showdown / Seen Flop
                 "wtsd": pct(s.wtsd_count, s.seen_flop_count),
+                
                 # WTSD Turn: Went to Showdown / Seen Turn
+                # Correct logic: (Went to Showdown) / (Seen Turn)
                 "wtsd_turn": pct(s.wtsd_count, s.seen_turn_count),
+                
                 # WTSD River: Went to Showdown / Seen River
+                # Correct logic: (Went to Showdown) / (Seen River)
+                # But wait, WTSD count is "Did show cards at end".
+                # If I see River, and fold on river, I did NOT go to showdown.
+                # So Denom = Seen River. Num = Went to Showdown.
+                # This seems correct.
                 "wtsd_river": pct(s.wtsd_count, s.seen_river_count),
                 
                 # W$SD: Won Money at Showdown / Went to Showdown
