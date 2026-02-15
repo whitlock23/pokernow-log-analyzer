@@ -1,4 +1,4 @@
-<img width="1980" height="1400" alt="image" src="https://github.com/user-attachments/assets/9a16ad8d-7fc2-4a85-a6c3-7b6f942d3e65" /># PokerNow Log Analyzer
+# PokerNow Log Analyzer
 
 A professional, local analytics suite for [PokerNow](https://pokernow.club/) logs. Analyze your home games with precision, tracking advanced statistics like VPIP, PFR, 3-Bet, 4-Bet, and post-flop tendencies across different positions.
 
@@ -16,7 +16,8 @@ A professional, local analytics suite for [PokerNow](https://pokernow.club/) log
 *   **Dark Mode**: Modern, eye-friendly dark interface.
 *   **Privacy Focused**: Runs 100% locally. Your data never leaves your machine.
 
-![Uploading image.png…]()
+<img width="2718" height="1266" alt="image" src="https://github.com/user-attachments/assets/1fc5690a-86c5-4fe4-8706-3cef50ffb17d" />
+
 
 
 ## Tech Stack
