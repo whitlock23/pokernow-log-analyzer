@@ -1,11 +1,16 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
-import { Edit2, Save, X, Search, User, ArrowRight } from 'lucide-react';
+import { Edit2, Save, X, Search, User, ArrowRight, Wand2, Check } from 'lucide-react';
 
 interface Player {
   id: string;
   original_name: string;
   current_alias: string;
+}
+
+interface MergeCandidate {
+  target_name: string;
+  players: { id: string; name: string }[];
 }
 
 interface PlayerMappingProps {
@@ -18,6 +23,11 @@ const PlayerMapping: React.FC<PlayerMappingProps> = ({ onMappingUpdate }) => {
   const [aliasInput, setAliasInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  
+  // Merge Modal State
+  const [showMergeModal, setShowMergeModal] = useState(false);
+  const [candidates, setCandidates] = useState<MergeCandidate[]>([]);
+  const [scanning, setScanning] = useState(false);
 
   useEffect(() => {
     fetchPlayers();
@@ -54,6 +64,37 @@ const PlayerMapping: React.FC<PlayerMappingProps> = ({ onMappingUpdate }) => {
     }
   };
 
+  const scanForMerges = async () => {
+    setScanning(true);
+    try {
+      const response = await axios.post('http://localhost:8000/scan-merge?threshold=0.8');
+      setCandidates(response.data);
+      setShowMergeModal(true);
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setScanning(false);
+    }
+  };
+
+  const applyMerge = async (candidate: MergeCandidate, targetName: string) => {
+    try {
+      const merges = candidate.players.map(p => ({
+        player_id: p.id,
+        alias: targetName
+      }));
+      
+      await axios.post('http://localhost:8000/bulk-merge', { merges });
+      
+      // Remove applied candidate
+      setCandidates(prev => prev.filter(c => c !== candidate));
+      fetchPlayers();
+      onMappingUpdate();
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
   const filteredPlayers = players.filter(p => 
     p.original_name.toLowerCase().includes(searchTerm.toLowerCase()) || 
     p.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -62,9 +103,9 @@ const PlayerMapping: React.FC<PlayerMappingProps> = ({ onMappingUpdate }) => {
 
   return (
     <div>
-      {/* Search Bar */}
-      <div className="p-6 border-b border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900">
-        <div className="relative max-w-md">
+      {/* Search Bar & Actions */}
+      <div className="p-6 border-b border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900 flex gap-4">
+        <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500" size={18} />
           <input 
             type="text" 
@@ -74,7 +115,77 @@ const PlayerMapping: React.FC<PlayerMappingProps> = ({ onMappingUpdate }) => {
             className="w-full pl-10 pr-4 py-2.5 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 dark:text-white transition-all text-sm placeholder:text-gray-400 dark:placeholder:text-gray-600"
           />
         </div>
+        <button
+          onClick={scanForMerges}
+          disabled={scanning}
+          className="flex items-center px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl transition-colors disabled:opacity-50 text-sm font-medium whitespace-nowrap"
+        >
+          <Wand2 size={16} className="mr-2" />
+          {scanning ? 'Scanning...' : 'Auto Merge'}
+        </button>
       </div>
+
+      {/* Merge Modal */}
+      {showMergeModal && (
+        <div className="fixed inset-0 bg-black/50 dark:bg-black/70 flex items-center justify-center z-50 p-4 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[80vh] overflow-hidden flex flex-col border border-gray-100 dark:border-gray-800">
+            <div className="p-6 border-b border-gray-100 dark:border-gray-800 flex justify-between items-center bg-gray-50 dark:bg-gray-800/50">
+              <h3 className="text-xl font-bold text-gray-900 dark:text-white">Suggested Merges</h3>
+              <button onClick={() => setShowMergeModal(false)} className="p-2 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-full">
+                <X size={20} className="text-gray-500 dark:text-gray-400" />
+              </button>
+            </div>
+            
+            <div className="overflow-auto p-6 space-y-6">
+              {candidates.length === 0 ? (
+                <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+                  No similar players found.
+                </div>
+              ) : (
+                candidates.map((candidate, idx) => (
+                  <div key={idx} className="bg-gray-50 dark:bg-gray-800/50 rounded-xl p-4 border border-gray-100 dark:border-gray-800">
+                    <div className="flex items-start justify-between mb-4">
+                      <div>
+                        <h4 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">Merge Group</h4>
+                        <div className="space-y-1">
+                          {candidate.players.map(p => (
+                            <div key={p.id} className="flex items-center gap-2">
+                              <div className="h-6 w-6 rounded-full bg-indigo-100 dark:bg-indigo-900/50 flex items-center justify-center text-[10px] font-bold text-indigo-600 dark:text-indigo-400">
+                                {p.name.substring(0, 2).toUpperCase()}
+                              </div>
+                              <span className="text-gray-900 dark:text-gray-200 font-medium">{p.name}</span>
+                              <span className="text-xs text-gray-400 font-mono">{p.id}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="flex items-center gap-2 pt-4 border-t border-gray-200 dark:border-gray-700">
+                      <input 
+                        type="text" 
+                        defaultValue={candidate.target_name}
+                        className="flex-1 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-white"
+                        id={`merge-name-${idx}`}
+                      />
+                      <button 
+                        onClick={() => {
+                          const input = document.getElementById(`merge-name-${idx}`) as HTMLInputElement;
+                          applyMerge(candidate, input.value);
+                        }}
+                        className="flex items-center px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors text-sm font-medium"
+                      >
+                        <Check size={16} className="mr-1.5" />
+                        Merge
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="overflow-x-auto max-h-[600px] bg-white dark:bg-gray-900">
         <table className="min-w-full table-auto">

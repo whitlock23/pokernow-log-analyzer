@@ -21,7 +21,16 @@ interface Stats {
 interface PlayerDetail extends Stats {
   id: string;
   name: string;
-  position_stats: Record<string, Stats>;
+  position_stats: Record<string, Stats & {
+    vpip_count: number; pfr_count: number;
+    three_bet_count: number; three_bet_opp: number;
+    fold_to_3bet_count: number; faced_3bet_count: number;
+    four_bet_count: number; four_bet_opp: number;
+    fold_to_4bet_count: number; faced_4bet_count: number;
+    c_bet_count: number; c_bet_opp: number;
+    fold_to_cbet_count: number; faced_cbet_count: number;
+    aggression_actions: number; call_actions: number;
+  }>;
 }
 
 interface PlayerDetailModalProps {
@@ -36,8 +45,27 @@ const PlayerDetailModal: React.FC<PlayerDetailModalProps> = ({ player, onClose }
   const getPosStat = (pos: string) => player.position_stats[pos] || {
     hands: 0, vpip: 0, pfr: 0, three_bet: 0, fold_to_3bet: 0, 
     four_bet: 0, fold_to_4bet: 0, five_bet: 0, fold_to_5bet: 0,
-    c_bet: 0, fold_to_cbet: 0, af: 0, wtsd: 0, wtsd_won: 0
+    c_bet: 0, fold_to_cbet: 0, af: 0, wtsd: 0, wtsd_won: 0,
+    // Add raw counts for tooltip
+    vpip_count: 0, pfr_count: 0, three_bet_count: 0, three_bet_opp: 0,
+    fold_to_3bet_count: 0, faced_3bet_count: 0,
+    four_bet_count: 0, four_bet_opp: 0,
+    fold_to_4bet_count: 0, faced_4bet_count: 0,
+    c_bet_count: 0, c_bet_opp: 0,
+    fold_to_cbet_count: 0, faced_cbet_count: 0,
+    aggression_actions: 0, call_actions: 0
   };
+
+  const TooltipCell = ({ value, count, opp, suffix = '%' }: { value: number | string, count?: number, opp?: number, suffix?: string }) => (
+    <div className="group relative inline-block cursor-help">
+      <span>{value}{suffix}</span>
+      {count !== undefined && (
+        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 hidden group-hover:block bg-gray-900 text-white text-xs rounded px-2 py-1 whitespace-nowrap z-50">
+          {count} / {opp !== undefined ? opp : player.hands}
+        </div>
+      )}
+    </div>
+  );
 
   return (
     <div className="fixed inset-0 bg-black/50 dark:bg-black/70 flex items-center justify-center z-50 p-4 backdrop-blur-sm animate-in fade-in duration-200">
@@ -103,15 +131,33 @@ const PlayerDetailModal: React.FC<PlayerDetailModalProps> = ({ player, onClose }
                       <tr key={pos} className="hover:bg-gray-50 dark:hover:bg-gray-800/30">
                         <td className="px-3 py-2 font-bold text-gray-700 dark:text-gray-300">{pos}</td>
                         <td className="px-3 py-2 text-right text-gray-500 dark:text-gray-400">{stats.hands}</td>
-                        <td className={`px-3 py-2 text-right font-bold ${getColor(stats.vpip, 40, 20)}`}>{stats.vpip}%</td>
-                        <td className="px-3 py-2 text-right text-gray-900 dark:text-gray-200">{stats.pfr}%</td>
-                        <td className="px-3 py-2 text-right text-gray-900 dark:text-gray-200">{stats.three_bet}%</td>
-                        <td className="px-3 py-2 text-right text-gray-500 dark:text-gray-400">{stats.fold_to_3bet}%</td>
-                        <td className="px-3 py-2 text-right text-gray-500 dark:text-gray-400">{stats.four_bet}%</td>
-                        <td className="px-3 py-2 text-right text-gray-500 dark:text-gray-400">{stats.fold_to_4bet}%</td>
-                        <td className="px-3 py-2 text-right text-gray-500 dark:text-gray-400">{stats.c_bet}%</td>
-                        <td className="px-3 py-2 text-right text-gray-500 dark:text-gray-400">{stats.fold_to_cbet}%</td>
-                        <td className="px-3 py-2 text-right text-gray-500 dark:text-gray-400">{stats.af}</td>
+                        <td className={`px-3 py-2 text-right font-bold ${getColor(stats.vpip, 40, 20)}`}>
+                          <TooltipCell value={stats.vpip} count={stats.vpip_count} opp={stats.hands} />
+                        </td>
+                        <td className="px-3 py-2 text-right text-gray-900 dark:text-gray-200">
+                          <TooltipCell value={stats.pfr} count={stats.pfr_count} opp={stats.hands} />
+                        </td>
+                        <td className="px-3 py-2 text-right text-gray-900 dark:text-gray-200">
+                          <TooltipCell value={stats.three_bet} count={stats.three_bet_count} opp={stats.three_bet_opp} />
+                        </td>
+                        <td className="px-3 py-2 text-right text-gray-500 dark:text-gray-400">
+                          <TooltipCell value={stats.fold_to_3bet} count={stats.fold_to_3bet_count} opp={stats.faced_3bet_count} />
+                        </td>
+                        <td className="px-3 py-2 text-right text-gray-500 dark:text-gray-400">
+                          <TooltipCell value={stats.four_bet} count={stats.four_bet_count} opp={stats.four_bet_opp} />
+                        </td>
+                        <td className="px-3 py-2 text-right text-gray-500 dark:text-gray-400">
+                          <TooltipCell value={stats.fold_to_4bet} count={stats.fold_to_4bet_count} opp={stats.faced_4bet_count} />
+                        </td>
+                        <td className="px-3 py-2 text-right text-gray-500 dark:text-gray-400">
+                          <TooltipCell value={stats.c_bet} count={stats.c_bet_count} opp={stats.c_bet_opp} />
+                        </td>
+                        <td className="px-3 py-2 text-right text-gray-500 dark:text-gray-400">
+                          <TooltipCell value={stats.fold_to_cbet} count={stats.fold_to_cbet_count} opp={stats.faced_cbet_count} />
+                        </td>
+                        <td className="px-3 py-2 text-right text-gray-500 dark:text-gray-400">
+                           <TooltipCell value={stats.af} count={stats.aggression_actions} opp={stats.call_actions} suffix="" />
+                        </td>
                       </tr>
                     );
                   })}

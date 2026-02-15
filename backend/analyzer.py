@@ -436,7 +436,18 @@ class Analyzer:
                 "fold_to_cbet": pct(s.fold_to_cbet_count, s.faced_cbet_count),
                 "af": round((s.aggression_actions / s.call_actions), 2) if s.call_actions > 0 else s.aggression_actions,
                 "wtsd": pct(s.wtsd_count, s.hands_played),
-                "wtsd_won": pct(s.won_at_showdown_count, s.wtsd_count)
+                "wtsd_won": pct(s.won_at_showdown_count, s.wtsd_count),
+                
+                # Raw counts for frontend tooltips
+                "vpip_count": s.vpip_count,
+                "pfr_count": s.pfr_count,
+                "three_bet_count": s.three_bet_count, "three_bet_opp": s.three_bet_opp,
+                "fold_to_3bet_count": s.fold_to_3bet_count, "faced_3bet_count": s.faced_3bet_count,
+                "four_bet_count": s.four_bet_count, "four_bet_opp": s.four_bet_opp,
+                "fold_to_4bet_count": s.fold_to_4bet_count, "faced_4bet_count": s.faced_4bet_count,
+                "c_bet_count": s.c_bet_count, "c_bet_opp": s.c_bet_opp,
+                "fold_to_cbet_count": s.fold_to_cbet_count, "faced_cbet_count": s.faced_cbet_count,
+                "aggression_actions": s.aggression_actions, "call_actions": s.call_actions
             }
 
         for name, stat in aggregated_stats.items():

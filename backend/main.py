@@ -6,6 +6,7 @@ import os
 from .parser import PokerNowParser
 from .analyzer import Analyzer
 from pydantic import BaseModel
+from difflib import SequenceMatcher
 
 app = FastAPI()
 
@@ -25,6 +26,12 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 class MappingRequest(BaseModel):
     player_id: str
     alias: str
+
+class BulkMergeRequest(BaseModel):
+    merges: List[MappingRequest]
+
+def similar(a, b):
+    return SequenceMatcher(None, a, b).ratio()
 
 @app.post("/upload")
 async def upload_log(files: List[UploadFile] = File(...)):
@@ -66,6 +73,64 @@ def reset_data():
 def update_mapping(req: MappingRequest):
     analyzer.add_alias(req.player_id, req.alias)
     return {"message": "Mapping updated"}
+
+@app.post("/scan-merge")
+def scan_merge_candidates(threshold: float = 0.8):
+    # Find candidates for merging based on name similarity
+    candidates = []
+    player_ids = list(analyzer.stats.keys())
+    
+    checked = set()
+    
+    for i in range(len(player_ids)):
+        pid1 = player_ids[i]
+        if pid1 in checked: continue
+        
+        name1 = analyzer.stats[pid1].name
+        # Skip if already aliased? No, we might want to merge based on raw names
+        # But if they are already mapped to same alias, skip.
+        alias1 = analyzer.player_aliases.get(pid1, name1)
+        
+        group = [pid1]
+        
+        for j in range(i + 1, len(player_ids)):
+            pid2 = player_ids[j]
+            if pid2 in checked: continue
+            
+            name2 = analyzer.stats[pid2].name
+            alias2 = analyzer.player_aliases.get(pid2, name2)
+            
+            # If already same alias, ignore
+            if alias1 == alias2:
+                continue
+                
+            # Check similarity
+            sim = similar(name1.lower(), name2.lower())
+            if sim >= threshold:
+                group.append(pid2)
+                checked.add(pid2)
+        
+        if len(group) > 1:
+            # We found a group. 
+            # We need to return info so user can decide which name to use as master
+            candidates.append({
+                "target_name": name1, # Suggest first name as target default
+                "players": [
+                    {"id": pid, "name": analyzer.stats[pid].name} 
+                    for pid in group
+                ]
+            })
+            checked.add(pid1)
+            
+    return candidates
+
+@app.post("/bulk-merge")
+def bulk_merge(req: BulkMergeRequest):
+    count = 0
+    for item in req.merges:
+        analyzer.add_alias(item.player_id, item.alias)
+        count += 1
+    return {"message": f"Merged {count} players"}
 
 @app.get("/players")
 def get_players():
