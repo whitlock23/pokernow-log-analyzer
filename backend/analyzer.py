@@ -1,0 +1,457 @@
+from typing import List, Dict, Set
+from .models import Hand, ActionType, Street, PlayerStat, BaseStats
+
+class Analyzer:
+    def __init__(self):
+        self.stats: Dict[str, PlayerStat] = {} # player_id -> Stat
+        self.player_aliases: Dict[str, str] = {} # player_id -> display_name
+        
+    def add_alias(self, player_id: str, alias: str):
+        self.player_aliases[player_id] = alias
+
+    def process_hands(self, hands: List[Hand]):
+        # Clear stats to avoid double counting if re-processing? 
+        # For now assume additive or handled by caller resetting.
+        for hand in hands:
+            self._process_single_hand(hand)
+
+    def _determine_position(self, hand: Hand, player_id: str) -> str:
+        # Based on seated_players and dealer_id
+        if not hand.seated_players or not hand.dealer_id:
+            return "Unknown"
+        
+        if player_id not in hand.seated_players:
+            return "Unknown" # Observer or error
+            
+        num_players = len(hand.seated_players)
+        try:
+            dealer_idx = hand.seated_players.index(hand.dealer_id)
+            player_idx = hand.seated_players.index(player_id)
+        except ValueError:
+            return "Unknown"
+            
+        # Calculate offset from Dealer (BTN)
+        # 0 = BTN
+        # 1 = SB
+        # 2 = BB
+        # 3 = UTG (in 6-max)
+        
+        # Calculate distance from button (moving clockwise)
+        # distance = (player_idx - dealer_idx) % num_players
+        # Wait, seat order usually moves clockwise?
+        # #1, #2, #3. If #1 is dealer, #2 is SB, #3 is BB.
+        # Yes.
+        
+        dist = (player_idx - dealer_idx) % num_players
+        
+        if num_players == 2:
+            # Heads Up
+            if dist == 0: return "BTN" # Dealer is BTN/SB in HU usually, but acts first preflop.
+            # In HU: Dealer posts SB. Other posts BB.
+            # So Dealer is SB. Other is BB.
+            # BUT standard naming: BTN is Dealer.
+            if dist == 0: return "BTN" 
+            if dist == 1: return "BB"
+            
+        elif num_players == 3:
+            if dist == 0: return "BTN"
+            if dist == 1: return "SB"
+            if dist == 2: return "BB"
+            
+        elif num_players == 4:
+            if dist == 0: return "BTN"
+            if dist == 1: return "SB"
+            if dist == 2: return "BB"
+            if dist == 3: return "CO" # or UTG
+            
+        elif num_players == 5:
+            if dist == 0: return "BTN"
+            if dist == 1: return "SB"
+            if dist == 2: return "BB"
+            if dist == 3: return "UTG"
+            if dist == 4: return "CO"
+            
+        elif num_players == 6:
+            if dist == 0: return "BTN"
+            if dist == 1: return "SB"
+            if dist == 2: return "BB"
+            if dist == 3: return "UTG"
+            if dist == 4: return "HJ" # Middle Position often called HJ in 6-max
+            if dist == 5: return "CO"
+            
+        elif num_players >= 7:
+            # Generalize
+            if dist == 0: return "BTN"
+            if dist == 1: return "SB"
+            if dist == 2: return "BB"
+            if dist == num_players - 1: return "CO"
+            if dist == num_players - 2: return "HJ"
+            if dist == num_players - 3: return "LJ" # or MP
+            # Remaining are UTG, UTG+1...
+            # distance 3 is UTG
+            utg_pos = dist - 3
+            if utg_pos >= 0:
+                if utg_pos == 0: return "UTG"
+                return f"UTG+{utg_pos}"
+        
+        return "Unknown"
+
+    def _update_stats(self, stat: BaseStats, update_fn):
+        update_fn(stat)
+
+    def _process_single_hand(self, hand: Hand):
+        players_in_hand = set(hand.players.keys())
+        
+        # Determine winners (actions with WIN)
+        winners = set()
+        for action in hand.actions:
+            if action.action_type == ActionType.WIN:
+                winners.add(action.player_id)
+        hand.winners = list(winners)
+
+        # Map Player -> Position
+        player_positions = {}
+        for pid in players_in_hand:
+            pos = self._determine_position(hand, pid)
+            player_positions[pid] = pos
+            
+            # Init stats
+            if pid not in self.stats:
+                self.stats[pid] = PlayerStat(player_id=pid, name=hand.players[pid])
+                
+            # Init position stats
+            if pos not in self.stats[pid].position_stats:
+                self.stats[pid].position_stats[pos] = BaseStats()
+                
+            self.stats[pid].hands_played += 1
+            self.stats[pid].position_stats[pos].hands_played += 1
+
+        # --- Trackers for this hand ---
+        # We need to track stats for Global AND Position specific
+        # Helper to update both
+        def update_stat(pid, field, increment=1):
+            if pid not in self.stats: return
+            # Update Global
+            setattr(self.stats[pid], field, getattr(self.stats[pid], field) + increment)
+            # Update Position
+            pos = player_positions.get(pid, "Unknown")
+            if pos in self.stats[pid].position_stats:
+                p_stat = self.stats[pid].position_stats[pos]
+                setattr(p_stat, field, getattr(p_stat, field) + increment)
+
+        did_vpip = set()
+        did_pfr = set()
+        did_3bet = set() 
+        did_4bet = set()
+        did_5bet = set()
+        
+        # Facing stats
+        faced_3bet = set()
+        folded_to_3bet = set()
+        faced_4bet = set()
+        folded_to_4bet = set()
+        faced_5bet = set()
+        folded_to_5bet = set()
+        
+        # C-Bet
+        preflop_aggressor = None
+        
+        actions_by_street = {
+            Street.PREFLOP: [],
+            Street.FLOP: [],
+            Street.TURN: [],
+            Street.RIVER: []
+        }
+        for action in hand.actions:
+            if action.street in actions_by_street:
+                actions_by_street[action.street].append(action)
+
+        # --- Preflop ---
+        pf_actions = actions_by_street[Street.PREFLOP]
+        
+        # State tracking for bets
+        current_raise_count = 0 
+        
+        # Logic for N-Bet:
+        # 1 raise = PFR (Open)
+        # 2 raises = 3-Bet
+        # 3 raises = 4-Bet
+        # 4 raises = 5-Bet
+        
+        # Track who made which bet to determine who is facing next
+        last_bettor = None
+        
+        for action in pf_actions:
+            pid = action.player_id
+            
+            # VPIP
+            if action.action_type in [ActionType.CALL, ActionType.RAISE, ActionType.BET]:
+                did_vpip.add(pid)
+                
+            # Bet/Raise Logic
+            if action.action_type == ActionType.RAISE:
+                current_raise_count += 1
+                last_bettor = pid
+                
+                if current_raise_count == 1:
+                    did_pfr.add(pid)
+                    preflop_aggressor = pid
+                elif current_raise_count == 2:
+                    did_3bet.add(pid)
+                    preflop_aggressor = pid
+                elif current_raise_count == 3:
+                    did_4bet.add(pid)
+                    preflop_aggressor = pid
+                elif current_raise_count >= 4: # 5-bet+
+                    did_5bet.add(pid)
+                    preflop_aggressor = pid
+            
+            # Fold Logic (Check what they faced)
+            if action.action_type == ActionType.FOLD:
+                # If current raise count is X, they folded to X-bet?
+                # No, if raise count is 2 (3-bet happened), and I fold, I folded to 3-bet.
+                if current_raise_count == 2:
+                    folded_to_3bet.add(pid)
+                elif current_raise_count == 3:
+                    folded_to_4bet.add(pid)
+                elif current_raise_count >= 4:
+                    folded_to_5bet.add(pid)
+                    
+            # Check "Faced" logic (Any action implies facing)
+            # If current_raise_count == 2, anyone acting (Call, Fold, Raise) is facing 3-bet.
+            # Except the person who made it? No, loop processes actions.
+            # When we encounter an action, `current_raise_count` is what's on board *before* this action?
+            # Wait, my loop updates `current_raise_count` inside.
+            # I should check facing state *before* updating count for current raise.
+            pass
+        
+        # Re-run for precise "Faced" and "Opp" logic
+        # Ideally we do this in one pass but state is tricky.
+        
+        curr_raises = 0
+        
+        # Opp tracking
+        # 3-bet opp: Acting when raises=1
+        # 4-bet opp: Acting when raises=2
+        # 5-bet opp: Acting when raises=3
+        
+        # Use sets to avoid double counting per player per hand
+        had_3bet_opp = set()
+        had_4bet_opp = set()
+        had_5bet_opp = set()
+        
+        # Identify who made the raises to exclude them from "facing" their own raise immediately?
+        # Actually if I raise, I am not facing a raise.
+        
+        for action in pf_actions:
+            pid = action.player_id
+            
+            # Determine status BEFORE this action
+            # If curr_raises == 1, player is facing PFR (Has 3-bet opp)
+            if curr_raises == 1:
+                # Unless they are the one who just raised?
+                # No, this is the next action.
+                if action.action_type in [ActionType.CALL, ActionType.RAISE, ActionType.FOLD]:
+                     had_3bet_opp.add(pid)
+                     # They are facing a raise (potential 3-bet situation)
+                     # But "Faced 3-Bet" usually means facing a re-raise.
+                     # Facing 1 raise is just facing an open.
+                     pass
+
+            if curr_raises == 2:
+                # Facing a 3-bet
+                if action.action_type in [ActionType.CALL, ActionType.RAISE, ActionType.FOLD]:
+                    had_4bet_opp.add(pid) # Chance to 4-bet
+                    faced_3bet.add(pid)
+            
+            if curr_raises == 3:
+                # Facing a 4-bet
+                if action.action_type in [ActionType.CALL, ActionType.RAISE, ActionType.FOLD]:
+                    had_5bet_opp.add(pid) # Chance to 5-bet
+                    faced_4bet.add(pid)
+            
+            if curr_raises >= 4:
+                # Facing 5-bet+
+                if action.action_type in [ActionType.CALL, ActionType.RAISE, ActionType.FOLD]:
+                    faced_5bet.add(pid)
+
+            # Update State
+            if action.action_type == ActionType.RAISE:
+                curr_raises += 1
+                
+        # --- Post-flop (C-Bet & AF) ---
+        c_bet_opp_player = preflop_aggressor
+        made_c_bet = False
+        faced_cbet_players = set()
+        folded_to_cbet_players = set()
+        
+        flop_actions = actions_by_street[Street.FLOP]
+        if c_bet_opp_player and len(flop_actions) > 0:
+            aggressor_acted = False
+            for action in flop_actions:
+                if action.player_id == c_bet_opp_player:
+                    aggressor_acted = True
+                    if action.action_type == ActionType.BET:
+                        made_c_bet = True
+                    break 
+            
+            if aggressor_acted:
+                update_stat(c_bet_opp_player, 'c_bet_opp')
+                if made_c_bet:
+                    update_stat(c_bet_opp_player, 'c_bet_count')
+        
+        if made_c_bet:
+            c_bet_index = -1
+            for i, action in enumerate(flop_actions):
+                if action.player_id == c_bet_opp_player and action.action_type == ActionType.BET:
+                    c_bet_index = i
+                    break
+            
+            if c_bet_index != -1:
+                for i in range(c_bet_index + 1, len(flop_actions)):
+                    act = flop_actions[i]
+                    if act.player_id != c_bet_opp_player:
+                        faced_cbet_players.add(act.player_id)
+                        if act.action_type == ActionType.FOLD:
+                            folded_to_cbet_players.add(act.player_id)
+
+        # --- Showdown ---
+        showdown_occurred = any(a.action_type == ActionType.SHOW for a in hand.actions)
+        players_at_showdown = set()
+        if showdown_occurred:
+            for action in hand.actions:
+                if action.action_type == ActionType.SHOW:
+                    players_at_showdown.add(action.player_id)
+            
+            winners_at_showdown = players_at_showdown.intersection(winners)
+            for pid in players_at_showdown:
+                update_stat(pid, 'wtsd_count')
+                if pid in winners_at_showdown:
+                    update_stat(pid, 'won_at_showdown_count')
+
+        # --- Apply Bulk Stats ---
+        for pid in players_in_hand:
+            if pid in did_vpip: update_stat(pid, 'vpip_count')
+            if pid in did_pfr: update_stat(pid, 'pfr_count')
+            if pid in did_3bet: update_stat(pid, 'three_bet_count')
+            if pid in did_4bet: update_stat(pid, 'four_bet_count')
+            if pid in did_5bet: update_stat(pid, 'five_bet_count')
+            
+            if pid in had_3bet_opp: update_stat(pid, 'three_bet_opp')
+            if pid in had_4bet_opp: update_stat(pid, 'four_bet_opp')
+            if pid in had_5bet_opp: update_stat(pid, 'five_bet_opp')
+            
+            if pid in faced_3bet: update_stat(pid, 'faced_3bet_count')
+            if pid in folded_to_3bet: update_stat(pid, 'fold_to_3bet_count')
+            
+            if pid in faced_4bet: update_stat(pid, 'faced_4bet_count')
+            if pid in folded_to_4bet: update_stat(pid, 'fold_to_4bet_count')
+            
+            if pid in faced_5bet: update_stat(pid, 'faced_5bet_count')
+            if pid in folded_to_5bet: update_stat(pid, 'fold_to_5bet_count')
+            
+            if pid in faced_cbet_players: update_stat(pid, 'faced_cbet_count')
+            if pid in folded_to_cbet_players: update_stat(pid, 'fold_to_cbet_count')
+            
+            if pid in winners: update_stat(pid, 'won_hand_count')
+            
+            # AF
+            for street in [Street.FLOP, Street.TURN, Street.RIVER]:
+                for action in actions_by_street[street]:
+                    if action.player_id == pid:
+                        if action.action_type in [ActionType.BET, ActionType.RAISE]:
+                            update_stat(pid, 'aggression_actions')
+                        elif action.action_type == ActionType.CALL:
+                            update_stat(pid, 'call_actions')
+
+    def get_summary(self):
+        aggregated_stats: Dict[str, PlayerStat] = {}
+
+        for pid, stat in self.stats.items():
+            display_name = self.player_aliases.get(pid, stat.name)
+            key = display_name
+            
+            if key not in aggregated_stats:
+                aggregated_stats[key] = PlayerStat(player_id=key, name=display_name)
+            
+            agg = aggregated_stats[key]
+            
+            # Helper to merge BaseStats
+            def merge_base(target: BaseStats, source: BaseStats):
+                target.hands_played += source.hands_played
+                target.vpip_count += source.vpip_count
+                target.pfr_count += source.pfr_count
+                target.three_bet_count += source.three_bet_count
+                target.three_bet_opp += source.three_bet_opp
+                target.fold_to_3bet_count += source.fold_to_3bet_count
+                target.faced_3bet_count += source.faced_3bet_count
+                
+                target.four_bet_count += source.four_bet_count
+                target.four_bet_opp += source.four_bet_opp
+                target.fold_to_4bet_count += source.fold_to_4bet_count
+                target.faced_4bet_count += source.faced_4bet_count
+                
+                target.five_bet_count += source.five_bet_count
+                target.five_bet_opp += source.five_bet_opp
+                target.fold_to_5bet_count += source.fold_to_5bet_count
+                target.faced_5bet_count += source.faced_5bet_count
+
+                target.c_bet_count += source.c_bet_count
+                target.c_bet_opp += source.c_bet_opp
+                target.fold_to_cbet_count += source.fold_to_cbet_count
+                target.faced_cbet_count += source.faced_cbet_count
+                
+                target.aggression_actions += source.aggression_actions
+                target.call_actions += source.call_actions
+                target.wtsd_count += source.wtsd_count
+                target.won_at_showdown_count += source.won_at_showdown_count
+                target.won_hand_count += source.won_hand_count
+            
+            # Merge Global
+            merge_base(agg, stat)
+            
+            # Merge Positions
+            for pos, p_stat in stat.position_stats.items():
+                if pos not in agg.position_stats:
+                    agg.position_stats[pos] = BaseStats()
+                merge_base(agg.position_stats[pos], p_stat)
+
+        results = []
+        
+        def calculate_percentages(s: BaseStats):
+            def pct(num, den):
+                return round((num / den * 100), 1) if den > 0 else 0
+            
+            return {
+                "hands": s.hands_played,
+                "vpip": pct(s.vpip_count, s.hands_played),
+                "pfr": pct(s.pfr_count, s.hands_played),
+                "three_bet": pct(s.three_bet_count, s.three_bet_opp),
+                "fold_to_3bet": pct(s.fold_to_3bet_count, s.faced_3bet_count),
+                "four_bet": pct(s.four_bet_count, s.four_bet_opp),
+                "fold_to_4bet": pct(s.fold_to_4bet_count, s.faced_4bet_count),
+                "five_bet": pct(s.five_bet_count, s.five_bet_opp),
+                "fold_to_5bet": pct(s.fold_to_5bet_count, s.faced_5bet_count),
+                "c_bet": pct(s.c_bet_count, s.c_bet_opp),
+                "fold_to_cbet": pct(s.fold_to_cbet_count, s.faced_cbet_count),
+                "af": round((s.aggression_actions / s.call_actions), 2) if s.call_actions > 0 else s.aggression_actions,
+                "wtsd": pct(s.wtsd_count, s.hands_played),
+                "wtsd_won": pct(s.won_at_showdown_count, s.wtsd_count)
+            }
+
+        for name, stat in aggregated_stats.items():
+            global_stats = calculate_percentages(stat)
+            
+            # Process Positional Stats
+            pos_breakdown = {}
+            for pos, p_stat in stat.position_stats.items():
+                pos_breakdown[pos] = calculate_percentages(p_stat)
+            
+            results.append({
+                "id": name,
+                "name": name,
+                **global_stats,
+                "position_stats": pos_breakdown
+            })
+            
+        return results
